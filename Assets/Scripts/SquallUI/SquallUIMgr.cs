@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
+using UnityEngine.Pool;
 using UnityEngine.UI;
 using Object = UnityEngine.Object;
 
@@ -66,7 +67,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
 
         private IView m_CurrentView;
 
-        public LayerOrderInfo(VIEW_LAYER layer)
+        public LayerOrderInfo(ViewLayer layer)
         {
             startSortingOrder = (int)layer * 1000;
         }
@@ -140,7 +141,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         LayerOrderInfo layerOrderInfo;
         if (!_panelOrder.TryGetValue(layer, out layerOrderInfo))
         {
-            layerOrderInfo = new LayerOrderInfo((VIEW_LAYER)layer);
+            layerOrderInfo = new LayerOrderInfo((ViewLayer)layer);
             _panelOrder.Add(layer, layerOrderInfo);
         }
         layerOrderInfo.SetOrder(view);
@@ -162,7 +163,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
     }
 
 
-    public int GetLayerOffset(VIEW_LAYER layer)
+    public int GetLayerOffset(ViewLayer layer)
     {
         return (int)layer * 1000;
     }
@@ -229,7 +230,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         if (viewInstance != null)
             return viewInstance;
 
-        LogManager.Instance.LogError("Warning: please add function in createViewInstance");
+        SLog.LogError("Warning: please add function in createViewInstance");
         return null;
     }
 
@@ -245,67 +246,23 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
     }
 
     // 创建界面
-    private IView CreateView(string viewName, LruObj parentObj)
+    private IView CreateView(string viewName)
     {
-        ResRefType resRefType = ResRefType.UIView;
-        if (UINeedForeverKeep(viewName)) resRefType = ResRefType.RefForever;
-
-        var result = ResManager.Instance.LoadUIManagerPrefab(viewName);
-        GameObject prefab = (GameObject)result.Item1;
-        string fullPath = result.Item2;
+        var prefab = LoadUIPrefab();
 
         if (prefab == null)
         {
-            LogManager.Instance.Log("Warning: ui prefab name must be equal to view name..." + viewName, LogManager.LogContent.UIVIEW);
+            SLog.Log("Warning: ui prefab name must be equal to view name..." + viewName);
             return null;
         }
-        ViewStatistics.Instance.EndLoad(viewName);
-
         GameObject viewObj = UnityEngine.Object.Instantiate(prefab);
-        ViewStatistics.Instance.EndInstantiate(viewName);
         if (viewObj != null)
         {
-            LruObj asset;
-            //Lru
-            if (parentObj != null)
-            {
-                asset = ResManager.Instance.AddChildLru(parentObj, fullPath, (lruObj) =>
-                {
-                    //因为有LruObj，所以这个View是其他东西创建的，销毁的时候会销毁资源，但ResManager不知道这是View还是Group
-                    //所以这里要在回调里调用UImanager的DestroyView方法
-                    ResManager.Instance.RefLog($"Lru调用Destroy（同步，子View） {viewName}", 2);
-                    bool desSuc = Instance.DestroyView(viewName, true);
-                    if (!desSuc) return false;
-
-                    //不要在这里进行资源管理，资源的释放和子Lru的释放都在ResManager中统一进行，否则容易出现过释放情况
-
-                    return true;
-                });
-            }
-            else
-            {
-                asset = new LruObj();
-                asset.FullPath = fullPath;
-                asset.OnDestroy = (lruObj) =>
-                {
-                    ResManager.Instance.RefLog($"Lru调用Destroy（同步） {viewName}", 2);
-                    bool suc = Instance.DestroyView(viewName, true);
-                    if (!suc) return false;
-                    //不要在这里进行资源管理，资源的释放和子Lru的释放都在ResManager中统一进行，否则容易出现过释放情况
-
-                    return true;
-                };
-                asset.KeepInCache = UINeedKeep(viewName);
-
-                ResManager.Instance.CheckAndRef(resRefType, asset);
-
-                ResManager.Instance.PutLruCache(asset);
-            }
-
+            
             viewObj.name = viewName.ToString();
             IView view = createViewInstance(viewName);
             if (view != null)
-                view.InitContainer(viewObj, viewName, asset);
+                view.InitContainer(viewObj, viewName);
 
             return view;
         }
@@ -319,7 +276,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
     {
         if (frozen)
         {
-            LogManager.Instance.Log("销毁界面中...");
+            SLog.Log("销毁界面中...");
             return false;
         }
 
@@ -327,12 +284,12 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         {
             if (loadingView.TryGetValue(viewName, out var loadViewInfo))
             {
-                ResManager.Instance.RefLog($"无法销毁View！！！！！{viewName} 原因：正在加载", 2);
+                SLog.Log($"无法销毁View！！！！！{viewName} 原因：正在加载");
                 loadViewInfo.viewState = E_View_State.Destroyed;
                 return false;
             }
 
-            ResManager.Instance.RefLog($"无法销毁View！！！！！{viewName} 原因：找不到了", 2);
+            SLog.Log($"无法销毁View！！！！！{viewName} 原因：找不到了");
             return true;
         }
 
@@ -356,31 +313,32 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         if (view != null)
         {
             view.Destroy();
-            ResManager.Instance.RefLog($"销毁View！！！！！{viewName}", 2);
+            SLog.Log($"销毁View！！！！！{viewName}");
             viewList.Remove(viewName);
         }
         else
         {
-            Debug.LogError($"View {viewName} not found when destroy");
+            SLog.Log($"View {viewName} not found when destroy");
         }
 
         return true;
     }
 
 
+    public static bool UIBlockBackgroundLocked;
     public void ShowScreenBackground(bool lockBlock = false)
     {
-        BlockHelper.UIBlockBackgroundLocked = lockBlock;
+        UIBlockBackgroundLocked = lockBlock;
         // Debug.LogError($"11111111  ShowScreenBackground _lockBlock:{lockBlock}");
         if (_screenBg == null)
         {
             _screenBg = UIRoot.Instance.gameObject.transform.parent.Find("ScreenBackground")?.gameObject;
             if (_screenBg == null)
             {
-                GameObject prefab = ResManager.Instance.LoadPrefab("ScreenBackground", "UI/Prefab/System", null);
+                GameObject prefab = LoadUIPrefab();
                 _screenBg = Object.Instantiate(prefab, UIRoot.Instance.gameObject.transform.parent);
                 _screenBg.name = "ScreenBackground";
-                _screenBg.GetComponent<Canvas>().worldCamera = CameraManager.UICamera;
+                // _screenBg.GetComponent<Canvas>().worldCamera = CameraManager.UICamera;
                 GameObject.DontDestroyOnLoad(_screenBg.gameObject);
             }
         }
@@ -389,10 +347,9 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
 
     public void HideScreenBackground(bool unlockBlock = false)
     {
-        if (BlockHelper.UIBlockBackgroundLocked && !unlockBlock) return;
+        if (UIBlockBackgroundLocked && !unlockBlock) return;
 
-        // Debug.LogError($"11111111  HideScreenBackground {BlockHelper.UIBlockBackgroundLocked} {unlockBlock}");
-        BlockHelper.UIBlockBackgroundLocked = false;
+        UIBlockBackgroundLocked = false;
 
         if (_screenBg == null)
         {
@@ -402,44 +359,22 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         _screenBg.SetActive(false);
     }
 
-    public void ShowView(string viewName, LruObj parentLru)
+    public void ShowView(string viewName)
     {
-        ShowView(viewName, null, false, parentLru);
+        ShowView(viewName, null, false);
     }
     // 显示界面
-    public void ShowView(string viewName, Action<IView> onShow = null, bool forceSync = false, LruObj parentLru = null)
+    public void ShowView(string viewName, Action<IView> onShow = null, bool forceSync = false)
     {
         if (frozen)
         {
-            LogManager.Instance.Log("销毁界面中...");
+            SLog.Log("销毁界面中...");
             return;
         }
+        
+        SLog.Log("打开面板" + viewName.ToString());
 
-        if (!UIFilter.Instance.Filter(viewName))
-        {
-            return;
-        }
-
-        GuideStaticData.TryGetID(viewName, out var viewId);
-        if (viewId > 0)
-        {
-            if (GuideManager.Instance.OnEvent(GuideEvent.View, viewId, GuideConst.VIEW_OP_BEFORE_SHOW))
-            {
-                LogManager.Instance.LogFormat("[引导] 打开界面{0}中断", viewName);
-                return;
-            }
-        }
-
-        // HideScreenBackground();
-        LogManager.Instance.Log("打开面板" + viewName.ToString(), LogManager.LogContent.UIVIEW);
-        // InputManager.Instance.ClearDownCache();
-
-        if (viewName != string.NetBlockView)
-        {
-            UIStackWatcher.Instance.PushUI(viewName.ToString());
-        }
-
-        UILogicEventDispatcher.Instance.Send(E_UILogicEventType.Game_ShowView);
+        UILogicEventDispatcher.Instance.Send((int)UILogicEvents.Game_ShowView);
         IView view = viewList.GetValueOrDefault(viewName);
         if (view == null)
         {
@@ -449,67 +384,27 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
                 if (view.IsVisible())
                 {
                     view.showCount++;
-                    J2Statistics.SendClickFunction(view.UiGameObj.name, view.showCount);
                     onShow?.Invoke(view);
-                    if (viewId > 0)
-                    {
-                        GuideManager.Instance.OnEvent(GuideEvent.View, viewId, GuideConst.VIEW_OP_SHOW);
-                    }
                 }
-            }, forceSync, parentLru);
+            }, forceSync);
         }
         else
         {
-            ResManager.Instance.RefLog($"使用旧的View：{viewName}", 4);
-            ViewStatistics.Instance.BeginOpen(viewName);
+            SLog.Log($"使用旧的View：{viewName}");
             if (!view.IsVisible())
                 view.Show();
-            ViewStatistics.Instance.EndOpen(viewName);
 
             view.showCount++;
-            J2Statistics.SendClickFunction(view.UiGameObj.name, view.showCount);
             onShow?.Invoke(view);
-
-            if (viewId > 0)
-            {
-                GuideManager.Instance.OnEvent(GuideEvent.View, viewId, GuideConst.VIEW_OP_SHOW);
-            }
         }
     }
 
     // 界面是否使用同步加载
     private Dictionary<string, bool> m_ViewLoadType = new Dictionary<string, bool>()
     {
-        { string.InitView, true },
-        { string.LoadingView, true },
-        { string.LadderLoadingView, true },
-        { string.CustomRoom1v1LoadingView, true },
-        { string.ResourcePVP1v1LoadingView, true },
-        { string.CustomRoom3v3LoadingView, true },
-        { string.PeakFightLoadingView, true },
-        { string.TeamBattleLoadingView, true },
-        { string.NetBlockView, true },
-        { string.NetConnectView, true },
-        { string.MaskView, true },
-        { string.BattleView, true },
-        { string.LoginView, true },
-        { string.MainCityView, true },
-        { string.SelectPlayerView, true },
-        { string.NewFinishView, true },
-        { string.RevivePopView, true },
-        { string.FullScreenVideoView, true },
-        { string.BlackDialogueView, true },
-        { string.DialogView, true },
-        { string.MainFBView, true },
-        { string.SpecialFlipCardView, true },
-        { string.FlipCardView, true },
-        { string.TipsView, true },
-        { string.BackpackView, true },             // 引导需要
-        { string.MainFBFinishView, true },             // 引导需要
-        { string.EquipCompareView, true },         // 引导需要
-        { string.SystemMessageView, true },        // 网络报错时，界面如果位于后台可能不能活动，这个界面会由于异步报错初始化不出来
+        // { string.InitView, true }
     };
-    private void LoadView(string viewType, Action<IView> onLoaded = null, bool forceSync = false, LruObj parentObj = null)
+    private void LoadView(string viewType, Action<IView> onLoaded = null, bool forceSync = false)
     {
         bool isSync;
         if (forceSync || m_ViewLoadType.TryGetValue(viewType, out isSync))
@@ -521,12 +416,12 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         {
             // 异步加载过程中
             isSync = false;
-            LogManager.Instance.LogWarning(viewType + " 正在异步加载过程中，不能使用同步加载");
+            SLog.Log(viewType + " 正在异步加载过程中，不能使用同步加载");
         }
 
         if (isSync)
         {
-            IView view = CreateView(viewType, parentObj);
+            IView view = CreateView(viewType);
             if (view != null)
             {
                 viewList[view.Name] = view;
@@ -564,60 +459,17 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
                     }
                     loadingViewInfo.onLoaded?.Invoke(view);
                     loadingView.Remove(viewType);
-                }, parentObj));
+                }));
             }
             loadViewInfo.onLoaded += onLoaded;
         }
     }
 
-    public bool UINeedKeep(string eViewType)
+    private IEnumerator LoadViewCoroutine(string viewType, Action<IView> onLoaded)
     {
-        return eViewType == string.MainCityView
-            || eViewType == string.GMButtonView
-            || eViewType == string.LoadingView;
-    }
-
-    private string[] _foreverKeepUI = new[]
-    {
-        string.LoadingView,
-        string.MainCityView,//因为在非战斗<->主城切换时（如主城<->主城切换时，不会触发UIManager的释放方法，所以这些不会被释放，再次调用就是用旧的，旧的就不能保证他的资源不被释放）
-        string.SelectPlayerView
-    };
-    public bool UINeedForeverKeep(string eViewType)
-    {
-        foreach (string viewType in _foreverKeepUI)
-        {
-            if (viewType == eViewType) return true;
-        }
-
-        return false;
-    }
-
-    private bool IsCrossSceneUI(string eViewType)
-    {
-        return false;
-        return eViewType == string.LoadingView;
-    }
-
-    private IEnumerator LoadViewCoroutine(string viewType, Action<IView> onLoaded, LruObj parentObj = null)
-    {
-        GameObject prefab = null;
-        string fullPath = "default";
-        ResRefType resRefType = ResRefType.UIView;
-        if (UINeedForeverKeep(viewType))
-        {
-            resRefType = ResRefType.RefForever;
-        }
-        yield return ResManager.Instance.LoadUIManagerPrefabAsync(viewType, (obj, loadFullPath) =>
-        {
-            prefab = obj;
-            fullPath = loadFullPath;
-        });
-
+        GameObject prefab = LoadUIPrefab();
         if (prefab == null)
         {
-            LogManager.Instance.Log(viewType, LogManager.LogContent.UIVIEW);
-            LogManager.Instance.Log("Warning: ui prefab name must be equal to view name...", LogManager.LogContent.UIVIEW);
             onLoaded?.Invoke(null);
             yield break;
         }
@@ -625,49 +477,10 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         GameObject viewObj = UnityEngine.Object.Instantiate(prefab);
         if (viewObj != null)
         {
-            LruObj asset;
-            if (parentObj != null)
-            {
-                asset = ResManager.Instance.AddChildLru(parentObj, fullPath, (lruObj) =>
-                {
-                    //因为有LruObj，所以这个View是其他东西创建的，销毁的时候会销毁资源，但ResManager不知道这是View还是Group
-                    //所以这里要在回调里调用UImanager的DestroyView方法
-                    ResManager.Instance.RefLog($"Lru调用Destroy（异步，子View） {viewType}", 2);
-                    bool destroySuc = Instance.DestroyView(viewType, true);
-                    if (!destroySuc) return false;
-
-                    return true;
-                });
-            }
-            else
-            {
-                asset = new LruObj();
-                asset.FullPath = fullPath;
-                asset.OnDestroy = (lruObj) =>
-                {
-                    ResManager.Instance.RefLog($"Lru调用Destroy（异步) {viewType}", 2);
-                    if (loadingView.TryGetValue(viewType, out var loadViewInfo))
-                    {
-                        ResManager.Instance.RefLog($"Lru调用Destroy,而{viewType}正在Loading，同时移除Loading列表中的它", 2);
-                    }
-                    bool suc = Instance.DestroyView(viewType, true);
-                    if (!suc) return false;
-
-                    return true;
-                };
-                //在外面Ref，这样能统一管理
-                ResManager.Instance.CheckAndRef(resRefType, asset);
-                //Put的时候，可能会释放其他LruObj
-                //如果在调用他们的onDestroy方法时报错，那么会卡到这一句，UI就永远在LoadingView中后面就加载不出来了
-                ResManager.Instance.PutLruCache(asset);
-                //所以要确保Keep状态要在Put成功之后加，否则LruCache也Pop不出来它了
-                asset.KeepInCache = UINeedKeep(viewType);
-            }
-
             viewObj.name = viewType.ToString();
             IView view = createViewInstance(viewType);
             if (view != null)
-                view.InitContainer(viewObj, viewType, asset);
+                view.InitContainer(viewObj, viewType);
 
             onLoaded?.Invoke(view);
             yield break;
@@ -680,7 +493,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
     //缓存有序界面
     public void PushOrderStack(IView view)
     {
-        if (GameUtil.UNITY_IOS()) return;
+        if (UNITY_IOS()) return;
         currentView = view;
 
         if (view != null && getOrderStackIndex(view) == -1)
@@ -689,6 +502,14 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         }
     }
 
+    private static bool UNITY_IOS()
+    {
+#if UNITY_IOS
+        return true;
+#else
+        return false;
+#endif
+    }
     public int getOrderStackIndex(IView view)
     {
         for (int i = 0; i < orderViewStack.Count; i++)
@@ -706,10 +527,10 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
     {
         if (view == null) return;
 
-        if (view.CurStackMode == VIEW_STACK.OverLay) return;
+        if (view.CurStackMode == ViewStack.OverLay) return;
 
         bool haveView = uiStack.Contains(view.Name);
-        if (view.CurStackMode == VIEW_STACK.FullOnly)
+        if (view.CurStackMode == ViewStack.FullOnly)
         {
             if (uiStack.Count > 0)
             {
@@ -737,27 +558,18 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
                 uiStack.Add(view.Name);
             }
         }
-        else if (view.CurStackMode == VIEW_STACK.OverMain)
+        else if (view.CurStackMode == ViewStack.OverMain)
         {
             if (uiStack.Count > 0)
             {
                 string topViewName = uiStack[uiStack.Count - 1];
-                if (topViewName != view.Name && UIHelper.IsMainCityView(topViewName))
+                if (topViewName != view.Name)
                 {
                     IView topView = viewList[topViewName];
                     if (topView != null)
                     {
                         topView.ActiveHide(false);
                     }
-                    //if (!haveView)
-                    //    uiStack.Add(view.Name);
-                    //else
-                    //{
-                    //    while (uiStack.Count > 0 && uiStack[uiStack.Count - 1] != view.Name)
-                    //    {
-                    //        uiStack.RemoveAt(uiStack.Count - 1);
-                    //    }
-                    //}
                 }
             }
         }
@@ -765,7 +577,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
 
     public void PopOrderStack(IView view)
     {
-        if (GameUtil.UNITY_IOS()) return;
+        if (UNITY_IOS()) return;
 
         if (view != null)
         {
@@ -798,11 +610,11 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
     {
         if (view == null) return;
 
-        if (view.CurStackMode == VIEW_STACK.OverLay || uiStack.Count == 0) return;
+        if (view.CurStackMode == ViewStack.OverLay || uiStack.Count == 0) return;
 
         string topViewName = uiStack[uiStack.Count - 1];
         bool popNext = false;
-        if (view.CurStackMode == VIEW_STACK.OverMain && UIHelper.IsMainCityView(topViewName))
+        if (view.CurStackMode == ViewStack.OverMain)
         {
             popNext = true;
         }
@@ -814,24 +626,11 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         if (popNext && uiStack.Count > 0)
         {
             string nextStack = uiStack[uiStack.Count - 1];
-            GuideStaticData.TryGetID(nextStack, out var viewId);
-            if (viewId > 0)
-            {
-                if (GuideManager.Instance.OnEvent(GuideEvent.View, viewId, GuideConst.VIEW_OP_BEFORE_SHOW))
-                {
-                    LogManager.Instance.LogFormat("[引导] 打开界面{0}中断", nextStack);
-                    return;
-                }
-            }
             getAndCreateView(nextStack, nextView =>
             {
                 if (nextView != null && frozen == false)
                 {
                     nextView.ActiveShow(false);
-                    if (viewId > 0)
-                    {
-                        GuideManager.Instance.OnEvent(GuideEvent.View, viewId, GuideConst.VIEW_OP_SHOW);
-                    }
                 }
             });
         }
@@ -846,7 +645,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         }
         else
         {
-            ResManager.Instance.RefLog($"使用旧的View：{viewName}", 4);
+            SLog.Log($"使用旧的View：{viewName}");
             onLoaded?.Invoke(view);
         }
     }
@@ -861,7 +660,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
     // 删除所有界面
     public void DestroyAllView()
     {
-        LogManager.Instance.Log("销毁所有界面");
+        SLog.Log("销毁所有界面");
         frozen = true;
         try
         {
@@ -880,7 +679,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         }
         catch (Exception err)
         {
-            LogManager.Instance.LogError(err);
+            SLog.LogError(err);
         }
         finally
         {
@@ -891,29 +690,12 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
 
     private void ClearViewList()
     {
-        Dictionary<string, IView> keepViews = new Dictionary<string, IView>();
-        foreach (KeyValuePair<string, IView> keyValuePair in viewList)
-        {
-            if (IsCrossSceneUI(keyValuePair.Key)) keepViews.Add(keyValuePair.Key, keyValuePair.Value);
-        }
-
         viewList.Clear();
-        foreach (KeyValuePair<string, IView> keyValuePair in keepViews)
-        {
-            viewList.Add(keyValuePair.Key, keyValuePair.Value);
-        }
     }
 
     private void ClearOrderViewStack()
     {
-        List<IView> keepViews = new List<IView>();
-        foreach (IView view in orderViewStack)
-        {
-            if (IsCrossSceneUI(view.Name)) keepViews.Add(view);
-        }
-
         orderViewStack.Clear();
-        orderViewStack.AddRange(keepViews);
     }
 
     public void HideAllView()
@@ -993,101 +775,6 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         }
     }
 
-    // 接收键盘事件
-    public void ReceiveKeycodeEvent(InputCmd cmd, InputStatus status)
-    {
-        if (TryGetView(string.BattleView, out var outView))
-        {
-            outView.OnReceiveKeycodeEvent(cmd, status);
-        }
-        if (currentView == null)
-            return;
-
-        currentView.OnReceiveKeycodeEvent(cmd, status);
-
-        //if (cmd == InputCmd.BackOrSetting && status == InputStatus.Up)
-        //    ShowExitGame();
-    }
-
-    private bool canResponseShowExitGame = true;
-    // 显示退出游戏提示
-    public void ShowExitGame()
-    {
-        if (canResponseShowExitGame)
-        {
-            if (GameUtil.IsLeDouPackage())
-            {
-                if (CommonDefine.MLSDSDKChannel == 0) // MLSDChannelPlatform.None)
-                    ShowDefaultExitGame();
-                else
-                    ShowSDKExitGame();
-            }
-            else
-                ShowDefaultExitGame();
-        }
-    }
-
-    private bool isShowExitGame = false;
-    public void ShowDefaultExitGame()
-    {
-        if (!isShowExitGame)
-        {
-            isShowExitGame = true;
-
-            UIHelper.Instance.ShowSystemMessageView(FunctionUtility.GetText("ExitGameTips"),
-                () =>
-                {
-                    isShowExitGame = false;
-
-                    if (!LuaMain.Instance.IsGameState(GameState.GAMESTATE_DEFINE.GameLogin))
-                    {
-                        //LogReportTool.RoleSnap()
-
-                        //LogReportTool.RoleExitGame()
-                    }
-
-                    LuaMain.Instance.ExitGame();
-
-                },
-
-
-                () =>
-                {
-                    isShowExitGame = false;
-                },
-                FunctionUtility.GetText("ExitGameOK"),
-                FunctionUtility.GetText("ExitGameCancel"),
-                false,
-                false
-                );
-        }
-
-    }
-
-    public void ShowSDKExitGame()
-    {
-        if (GameSdkManager.IsSupportExitGame())
-        {
-            GameSdkManager.SDKExitGame((result) =>
-            {
-                if (result)
-                {
-                    if (!LuaMain.Instance.IsGameState(GameState.GAMESTATE_DEFINE.GameLogin))
-                    {
-                        //    LogReportTool.RoleSnap()
-
-                        //LogReportTool.RoleExitGame()
-                    }
-
-                    LuaMain.Instance.ExitGame();
-                }
-            });
-        }
-        else
-            UIManager.Instance.ShowDefaultExitGame();
-    }
-
-
     // 隐藏界面
     public void HideView(string viewName)
     {
@@ -1113,10 +800,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         {
             if (kv.Value != null && !kv.Value.IsVisible() && kv.Value.CanUnload)
             {
-                if (!IsCrossSceneUI(kv.Key))
-                {
-                    unloadViewKeys.Add(kv.Key);
-                }
+                unloadViewKeys.Add(kv.Key);
             }
         }
 
@@ -1124,20 +808,12 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         {
             DestroyView(unloadViewKeys[i], false);
         }
-
     }
 
     // UI栈
     public void ClearUIStack(bool forceAll = false)
     {
         uiStack.Clear();
-        if (!forceAll)
-        {
-            foreach (string eViewType in _foreverKeepUI)
-            {
-                uiStack.Add(eViewType);
-            }
-        }
     }
 
     public override void Dispose()
@@ -1150,18 +826,14 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
     }
 
     // 隐藏所有OverLay界面
-    public void HideAllOverLay(bool includeChat = true)
+    public void HideAllOverLay()
     {
         foreach (var kv in viewList)
         {
             var view = kv.Value;
             if (view != null && view.IsVisible())
             {
-                if (!includeChat && view.Name == string.ChatView)
-                    continue;
-                if (view.Name == string.TeamMatchView)
-                    continue;
-                if (view.CurStackMode == VIEW_STACK.OverLay)
+                if (view.CurStackMode == ViewStack.OverLay)
                 {
                     view.Hide();
                 }
@@ -1177,7 +849,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
             var view = kv.Value;
             if (view != null && view.IsVisible())
             {
-                if (view.Layer > VIEW_LAYER.Bottom)
+                if (view.Layer > ViewLayer.Bottom)
                     view.Hide();
             }
 
@@ -1185,7 +857,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
 
     }
 
-    public bool HasTheSameLayerView(string view, VIEW_LAYER layer)
+    public bool HasTheSameLayerView(string view, ViewLayer layer)
     {
         bool isHave = false;
         foreach (var viewInfo in viewList)
@@ -1203,27 +875,14 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         return isHave;
     }
 
-    public void AdaptScreenArea()
-    {
-        var offset = PlayerPrefsManager.Instance.GetAdaptScreenArea();
-        foreach (var kv in viewList)
-        {
-            var view = kv.Value;
-            if (view != null)
-            {
-                view.AutoAdaptScreenSafeArea();
-            }
-        }
-    }
-
     private List<string> loadViewList = new(){
-        string.LoadingView ,
-        string.LadderLoadingView ,
-        string.CustomRoom1v1LoadingView,
-        string.ResourcePVP1v1LoadingView,
-        string.PeakFightLoadingView,
-        string.CustomRoom3v3LoadingView,
-        string.TeamBattleLoadingView
+        // string.LoadingView ,
+        // string.LadderLoadingView ,
+        // string.CustomRoom1v1LoadingView,
+        // string.ResourcePVP1v1LoadingView,
+        // string.PeakFightLoadingView,
+        // string.CustomRoom3v3LoadingView,
+        // string.TeamBattleLoadingView
     };
 
     public bool IsLoadViewShow()
@@ -1255,8 +914,6 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
                 view.DoUpdate();
             }
         }
-        TeamManager.Instance.Update();
-        FPSCounter.Instance.Update();
     }
 
     /// 同步战斗的UpdateLogic
@@ -1290,7 +947,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
     public string GetTopView()
     {
         if (uiStack.Count <= 0)
-            return string.None;
+            return E_View_Type.None.ToString();
 
         string topViewName = uiStack[uiStack.Count - 1];
         return topViewName;
@@ -1307,8 +964,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
         foreach (var kv in viewList)
         {
             var view = kv.Value;
-            if (view != null && view.IsVisible() &&
-                view.Name != string.GMButtonView && view.Name != string.MarqueeView)
+            if (view != null && view.IsVisible())
             {
                 count++;
             }
@@ -1324,36 +980,36 @@ public class ViewPackage
         IView ret = null;
         switch (viewName)
         {
-            case string.LoadingView:
-                ret = new LoadingView();
-                break;
-            case string.InitView:
-                ret = new InitView();
-                break;
-            case string.MainCityView:
-                ret = new MainCityView();
-                break;
-            case string.QuestView:
-                ret = new QuestView();
-                break;
-            case string.SelectJobGroupView:
-                ret = new SelectJobGroupView();
-                break;
-            case string.CreateJobView:
-                ret = new CreateJobView();
-                break;
-            case string.DeletePlayerView:
-                ret = new DeletePlayerView();
-                break;
-            case string.MainBtnSetView:
-                ret = new MainBtnSetView();
-                break;
-            case string.RankView:
-                ret = new RankView();
-                break;
-            case string.MilitaryRankView:
-                ret = new MilitaryRankView();
-                break;
+            // case string.LoadingView:
+            //     ret = new LoadingView();
+            //     break;
+            // case string.InitView:
+            //     ret = new InitView();
+            //     break;
+            // case string.MainCityView:
+            //     ret = new MainCityView();
+            //     break;
+            // case string.QuestView:
+            //     ret = new QuestView();
+            //     break;
+            // case string.SelectJobGroupView:
+            //     ret = new SelectJobGroupView();
+            //     break;
+            // case string.CreateJobView:
+            //     ret = new CreateJobView();
+            //     break;
+            // case string.DeletePlayerView:
+            //     ret = new DeletePlayerView();
+            //     break;
+            // case string.MainBtnSetView:
+            //     ret = new MainBtnSetView();
+            //     break;
+            // case string.RankView:
+            //     ret = new RankView();
+            //     break;
+            // case string.MilitaryRankView:
+            //     ret = new MilitaryRankView();
+            //     break;
             default:
                 Type t = Type.GetType(viewName.ToString());
                 if (t != null)
@@ -1701,109 +1357,3 @@ public class UIPrefabProblem
 }
 
 #endif
-
-public class ViewStatistics : Singleton<ViewStatistics>
-{
-    public class ViewDebugInfo
-    {
-        public string viewType;
-        public int firstOpenTime;
-        public string header;
-        public ViewOpenDebugInfo openningInfo;
-        public List<ViewOpenDebugInfo> viewOpenList = new List<ViewOpenDebugInfo>();
-    }
-
-    public class ViewOpenDebugInfo
-    {
-        /// <summary>
-        /// 打开开始时间
-        /// </summary>
-        public long openTime_Begin;
-        /// <summary>
-        /// 加载结束时间
-        /// </summary>
-        public long openTime_Loaded;
-        /// <summary>
-        /// 实例化结束时间
-        /// </summary>
-        public long openTime_Instantiated;
-        /// <summary>
-        /// 打开结束时间
-        /// </summary>
-        public long openTime_End;
-    }
-
-    public Dictionary<string, ViewDebugInfo> viewDebugInfos = new Dictionary<string, ViewDebugInfo>();
-
-    [System.Diagnostics.Conditional("UI_DEBUG")]
-    [System.Diagnostics.Conditional("UNITY_EDITOR")]
-    public void BeginOpen(string viewType)
-    {
-        ViewDebugInfo viewDebugInfo;
-        ViewOpenDebugInfo viewOpenDebugInfo;
-        if (!viewDebugInfos.TryGetValue(viewType, out viewDebugInfo))
-        {
-            viewDebugInfo = new ViewDebugInfo();
-            viewDebugInfo.viewType = viewType;
-            viewDebugInfos.Add(viewType, viewDebugInfo);
-        }
-        viewOpenDebugInfo = new ViewOpenDebugInfo();
-        viewDebugInfo.openningInfo = viewOpenDebugInfo;
-        viewOpenDebugInfo.openTime_Begin = GameUtil.GetMsTimestamp();
-        viewOpenDebugInfo.openTime_Loaded = -1;
-        viewOpenDebugInfo.openTime_Instantiated = -1;
-        viewOpenDebugInfo.openTime_End = -1;
-    }
-
-    [System.Diagnostics.Conditional("UI_DEBUG")]
-    [System.Diagnostics.Conditional("UNITY_EDITOR")]
-    public void EndLoad(string viewType)
-    {
-        long endTime = GameUtil.GetMsTimestamp();
-        ViewDebugInfo viewDebugInfo;
-        if (!viewDebugInfos.TryGetValue(viewType, out viewDebugInfo) || viewDebugInfo == null || viewDebugInfo.openningInfo == null)
-        {
-            Debug.LogWarning("错误：没有打开，直接结束");
-            return;
-        }
-        viewDebugInfo.openningInfo.openTime_Loaded = endTime;
-    }
-
-    [System.Diagnostics.Conditional("UI_DEBUG")]
-    [System.Diagnostics.Conditional("UNITY_EDITOR")]
-    public void EndInstantiate(string viewType)
-    {
-        long endTime = GameUtil.GetMsTimestamp();
-        ViewDebugInfo viewDebugInfo;
-        if (!viewDebugInfos.TryGetValue(viewType, out viewDebugInfo) || viewDebugInfo == null || viewDebugInfo.openningInfo == null)
-        {
-            Debug.LogWarning("错误：没有打开，直接结束");
-            return;
-        }
-        viewDebugInfo.openningInfo.openTime_Instantiated = endTime;
-    }
-
-    [System.Diagnostics.Conditional("UI_DEBUG")]
-    [System.Diagnostics.Conditional("UNITY_EDITOR")]
-    public void EndOpen(string viewType)
-    {
-        long endTime = GameUtil.GetMsTimestamp();
-        ViewDebugInfo viewDebugInfo;
-        if (!viewDebugInfos.TryGetValue(viewType, out viewDebugInfo) || viewDebugInfo == null || viewDebugInfo.openningInfo == null)
-        {
-            Debug.LogWarning("错误：没有打开，直接结束");
-            return;
-        }
-        viewDebugInfo.openningInfo.openTime_End = endTime;
-        viewDebugInfo.viewOpenList.Add(viewDebugInfo.openningInfo);
-        viewDebugInfo.openningInfo = null;
-    }
-
-    [System.Diagnostics.Conditional("UI_DEBUG")]
-    [System.Diagnostics.Conditional("UNITY_EDITOR")]
-    public void Save(string filepath)
-    {
-        string text = Newtonsoft.Json.JsonConvert.SerializeObject(viewDebugInfos);
-        System.IO.File.WriteAllText(filepath, text);
-    }
-}

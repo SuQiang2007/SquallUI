@@ -202,10 +202,7 @@ public class IGroup : IControlContainer
         IGroup panel;
         if (!panelDict.TryGetValue(panelType, out panel))
         {
-            ResRefObj resRefObj = new ResRefObj();
-            resRefObj.resRefType = ResRefType.DynamicUI;
-            resRefObj.parentUIClassName = eViewType.ToString();
-            GameObject prefab = ResManager.Instance.loadAsset(typeof(GameObject), uiPrefabName, path, resRefObj) as GameObject;
+            GameObject prefab = SquallUIMgr.Instance.LoadUIPrefab();
             GameObject uiObj = GameObject.Instantiate(prefab, subRoot);
             if (resetMatrix)
             {

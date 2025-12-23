@@ -4,6 +4,6 @@ public partial class TypeFactory
 {
     static TypeFactory()
     {
-        RegisterCreator<AbyssPassCfgs>();
+        
     }
 }
