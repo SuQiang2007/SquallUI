@@ -16,6 +16,7 @@ public class IView : IControlContainer
 {
 	public string Name;
 	protected RectTransform _CachedTrans;
+	protected GameGraphicRaycaster GraphicRaycaster;
 	private bool _Visible;
 	public ViewLayer Layer;
 	public ViewStack CurStackMode;
@@ -47,10 +48,23 @@ public class IView : IControlContainer
 		this.IsAudio = true;
 		this.NeedUpdate = false;
 		
-		// 处理 GraphicRaycaster：删除根节点的，确保根 Canvas 上有且只有一个
-		GraphicRaycaster graphicRaycaster = obj.GetComponent<GraphicRaycaster>();
-		Canvas canvas = obj.GetComponent<Canvas>();
+		// 确保使用 GameGraphicRaycaster 而不是普通的 GraphicRaycaster
+		// 先检查是否已有 GameGraphicRaycaster
+		GraphicRaycaster = obj.GetComponent<GameGraphicRaycaster>();
+		if (GraphicRaycaster == null)
+		{
+			// 如果没有，先删除可能存在的普通 GraphicRaycaster
+			GraphicRaycaster oldRaycaster = obj.GetComponent<GraphicRaycaster>();
+			if (oldRaycaster != null)
+			{
+				Object.Destroy(oldRaycaster);
+			}
+			// 添加 GameGraphicRaycaster
+			GraphicRaycaster = obj.AddComponent<GameGraphicRaycaster>();
+		}
 		
+		// 确保 Canvas 设置正确
+		Canvas canvas = obj.GetComponent<Canvas>();
 		if (canvas != null)
 		{
 			// 确保 Canvas 使用 Screen Space - Overlay，这样所有 Canvas 共享同一个 EventSystem
@@ -58,26 +72,7 @@ public class IView : IControlContainer
 			{
 				canvas.renderMode = RenderMode.ScreenSpaceOverlay;
 			}
-			
-			// 如果根节点有 GraphicRaycaster，删除它（因为会在 Canvas 上统一管理）
-			if (graphicRaycaster != null)
-			{
-				Object.Destroy(graphicRaycaster);
-			}
-			
-			// 确保 Canvas 上有 GraphicRaycaster（如果没有则添加）
-			if (canvas.GetComponent<GraphicRaycaster>() == null)
-			{
-				canvas.gameObject.AddComponent<GraphicRaycaster>();
-			}
-		}
-		else
-		{
-			// 如果没有 Canvas，删除 GraphicRaycaster（避免干扰）
-			if (graphicRaycaster != null)
-			{
-				Object.Destroy(graphicRaycaster);
-			}
+			// 注意：GameGraphicRaycaster 已经添加到 obj 上，不需要在 canvas 上再添加
 		}
 
 		// 适配屏幕安全区域（在设置 anchor 后调用，确保适配正确）
