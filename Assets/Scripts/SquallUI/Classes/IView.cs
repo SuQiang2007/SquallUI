@@ -7,6 +7,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.U2D;
 using UnityEngine.UI;
 using Debug = UnityEngine.Debug;
+using Object = UnityEngine.Object;
 
 /// <summary>
 /// UI对象控件容器抽象
@@ -24,10 +25,6 @@ public class IView : IControlContainer
 	public bool CanUnload;
 	public int showCount = 0;
 
-#if UNITY_EDITOR
-	private int m_OnShowItemComponentCount = 0;
-#endif
-
 	protected Dictionary<Type, IGroup> panelDict;
 
 	// 内部构造，界面对象请勿调用
@@ -37,6 +34,10 @@ public class IView : IControlContainer
 		this._uiGameObj = obj;
 		this._CachedTrans = obj.GetComponent<RectTransform>();
 		this._CachedTrans.SetParent(UIRoot.Instance.Trans);
+		
+		// 设置 RectTransform 为全屏拉伸，确保适配正确
+		this._CachedTrans.anchorMin = Vector2.zero;
+		this._CachedTrans.anchorMax = Vector2.one;
 		this._CachedTrans.offsetMax = Vector2.zero;
 		this._CachedTrans.offsetMin = Vector2.zero;
 		this._CachedTrans.localScale = Vector3.one;
@@ -45,10 +46,41 @@ public class IView : IControlContainer
 		this.CurStackMode = ViewStack.FullOnly;
 		this.IsAudio = true;
 		this.NeedUpdate = false;
+		
+		// 处理 GraphicRaycaster：删除根节点的，确保根 Canvas 上有且只有一个
 		GraphicRaycaster graphicRaycaster = obj.GetComponent<GraphicRaycaster>();
-		if (graphicRaycaster != null)
-			GameObject.Destroy(graphicRaycaster);
+		Canvas canvas = obj.GetComponent<Canvas>();
+		
+		if (canvas != null)
+		{
+			// 确保 Canvas 使用 Screen Space - Overlay，这样所有 Canvas 共享同一个 EventSystem
+			if (canvas.renderMode != RenderMode.ScreenSpaceOverlay)
+			{
+				canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+			}
+			
+			// 如果根节点有 GraphicRaycaster，删除它（因为会在 Canvas 上统一管理）
+			if (graphicRaycaster != null)
+			{
+				Object.Destroy(graphicRaycaster);
+			}
+			
+			// 确保 Canvas 上有 GraphicRaycaster（如果没有则添加）
+			if (canvas.GetComponent<GraphicRaycaster>() == null)
+			{
+				canvas.gameObject.AddComponent<GraphicRaycaster>();
+			}
+		}
+		else
+		{
+			// 如果没有 Canvas，删除 GraphicRaycaster（避免干扰）
+			if (graphicRaycaster != null)
+			{
+				Object.Destroy(graphicRaycaster);
+			}
+		}
 
+		// 适配屏幕安全区域（在设置 anchor 后调用，确保适配正确）
 		AutoAdaptScreenSafeArea();
 		this.ViewOffset = this._CachedTrans.sizeDelta.x / 2;
 		// 能否卸载，表示随时可以直接删除
@@ -101,8 +133,9 @@ public class IView : IControlContainer
 		// 屏幕贴边适配
 		if (!ignoreAdaptView.TryGetValue(Name, out int v) || (v & 0x1) != 0x1)
 		{
-			float rootWidth = UIRoot.Instance.rectTransform.rect.width;
-			paddingHorizontal = Mathf.Max(Mathf.Min((rootWidth - UIRoot.DESIGN_WIDTH) * 0.5f, 150f));
+			float rootWidth = UIRoot.Instance.RectTransform.rect.width;
+			// 修复：Mathf.Max 需要两个参数，这里应该是限制在 0 到 150 之间
+			paddingHorizontal = Mathf.Max(0f, Mathf.Min((rootWidth - UIRoot.DESIGN_WIDTH) * 0.5f, 150f));
 		}
 		SetScreenArea(paddingHorizontal);
 	}
@@ -236,7 +269,7 @@ public class IView : IControlContainer
 		_uiGameObj.SetActive(true);
 
 		AutoAdaptScreenSafeArea();
-		UIRoot.onAspectChanged.AddListener(OnAspectChanged);
+		UIRoot.OnAspectChanged.AddListener(OnAspectChanged);
 
 		OnShow();
 		SquallUIMgr.Instance.SetOrder(this, (int)Layer);
@@ -248,7 +281,7 @@ public class IView : IControlContainer
 
 	public void ActiveHide(bool isActive)
 	{
-		UIRoot.onAspectChanged.RemoveListener(OnAspectChanged);
+		UIRoot.OnAspectChanged.RemoveListener(OnAspectChanged);
 		if (_CachedTrans == null) return;
 		SquallUIMgr.Instance.PopOrderStack(this);
 
@@ -285,7 +318,7 @@ public class IView : IControlContainer
 	{
 		if (this._CachedTrans == null)
 		{
-			UIRoot.onAspectChanged.RemoveListener(OnAspectChanged);
+			UIRoot.OnAspectChanged.RemoveListener(OnAspectChanged);
 			return;
 		}
 		AutoAdaptScreenSafeArea();
@@ -311,33 +344,14 @@ public class IView : IControlContainer
 	{
 		if (panelDict == null)
 		{
-			panelDict = new Dictionary<System.Type, IGroup>();
+			panelDict = new Dictionary<Type, IGroup>();
 		}
 
 		// 获取UI预制名称
 		var t = typeof(T);
-		string uiPrefabName;
-		if (string.IsNullOrEmpty(replacePrefabName))
+		if (!panelDict.TryGetValue(t, out var panel))
 		{
-			uiPrefabName = t.Name;
-		}
-		else
-		{
-			uiPrefabName = replacePrefabName;
-		}
-
-		IGroup panel;
-		if (!panelDict.TryGetValue(t, out panel))
-		{
-			GameObject uiObj = SquallUIMgr.Instance.LoadUIPrefab();
-			if (resetMatrix)
-			{
-				uiObj.transform.localPosition = Vector3.zero;
-				uiObj.transform.localRotation = Quaternion.identity;
-				uiObj.transform.localScale = Vector3.one;
-			}
-			panel = new T();
-			panel.InitContainerByOwner(this, uiObj);
+			panel = SquallUIMgr.Instance.CreateGroup<T>(t.Name, this, subRoot);
 			panelDict.Add(t, panel);
 		}
 
@@ -350,7 +364,7 @@ public class IView : IControlContainer
 
 	protected IGroup ShowPanel(string panelName, Transform subRoot, string path, bool resetMatrix = false, string replacePrefabName = null, System.Action<IGroup> executeBeforeShow = null)
 	{
-		var panelType = typeof(SquallUIMgr).Assembly.GetType(panelName);
+		Type panelType = typeof(SquallUIMgr).Assembly.GetType(panelName);
 
 		if (!typeof(IGroup).IsAssignableFrom(panelType))
 		{
@@ -362,29 +376,9 @@ public class IView : IControlContainer
 			panelDict = new Dictionary<Type, IGroup>();
 		}
 
-		// 获取UI预制名称
-		string uiPrefabName;
-		if (string.IsNullOrEmpty(replacePrefabName))
+		if (!panelDict.TryGetValue(panelType, out var panel))
 		{
-			uiPrefabName = panelType.Name;
-		}
-		else
-		{
-			uiPrefabName = replacePrefabName;
-		}
-
-		IGroup panel;
-		if (!panelDict.TryGetValue(panelType, out panel))
-		{
-			GameObject uiObj = SquallUIMgr.Instance.LoadUIPrefab();
-			if (resetMatrix)
-			{
-				uiObj.transform.localPosition = Vector3.zero;
-				uiObj.transform.localRotation = Quaternion.identity;
-				uiObj.transform.localScale = Vector3.one;
-			}
-			panel = TypeFactory.Create(panelType) as IGroup;
-			panel.InitContainerByOwner(this, uiObj);
+			panel = SquallUIMgr.Instance.CreateGroup(panelType, panelName, this);
 			panelDict.Add(panelType, panel);
 		}
 

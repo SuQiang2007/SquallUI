@@ -2,6 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
+using SquallUI;
+using SquallUI.Classes;
 using UnityEngine;
 using UnityEngine.Pool;
 using UnityEngine.UI;
@@ -15,11 +17,16 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
 {
     #region Loader
 
-    public GameObject LoadUIPrefab()
+    [SerializeField] private IViewFactory _viewFactory;
+    private IViewFactory ViewFactory
     {
-        //todo: Realize your load logic here
-        Debug.LogError("You must realize yourselfs load logic here!");
-        return null;
+        get
+        {
+            if (_viewFactory == null)
+                _viewFactory = new IViewFactory();
+            
+            return _viewFactory;
+        }
     }
 
     #endregion
@@ -224,16 +231,6 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
     #endregion
 
 
-    private IView createViewInstance(string viewName)
-    {
-        IView viewInstance = ViewPackage.GetViewInstance(viewName);
-        if (viewInstance != null)
-            return viewInstance;
-
-        SLog.LogError("Warning: please add function in createViewInstance");
-        return null;
-    }
-
     /// <summary>
     /// 获取界面（界面可能未加载完，或者未显示，返回为false，且view为空）
     /// </summary>
@@ -248,26 +245,38 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
     // 创建界面
     private IView CreateView(string viewName)
     {
-        var prefab = LoadUIPrefab();
-
-        if (prefab == null)
-        {
-            SLog.Log("Warning: ui prefab name must be equal to view name..." + viewName);
+        if (ViewFactory == null)
             return null;
-        }
-        GameObject viewObj = UnityEngine.Object.Instantiate(prefab);
-        if (viewObj != null)
-        {
-            
-            viewObj.name = viewName.ToString();
-            IView view = createViewInstance(viewName);
-            if (view != null)
-                view.InitContainer(viewObj, viewName);
 
-            return view;
-        }
+        IView view = ViewFactory.CreateView(viewName);
+        if (view == null)
+            SLog.LogError($"Warning: ui prefab name must be equal to view name...{viewName}");
 
-        return null;
+        return view;
+    }
+
+    internal IGroup CreateGroup<T>(string viewName, IControlContainer parentView, Transform parentTrans) where T : IGroup,new()
+    {
+        if (ViewFactory == null)
+            return null;
+
+        IGroup view = ViewFactory.CreateGroup<T>(viewName, parentView, parentTrans);
+        if (view == null)
+            SLog.Log($"Warning: ui prefab name must be equal to view name...{viewName}");
+
+        return view;
+    }
+
+    internal IGroup CreateGroup(Type groupType, string viewName, IControlContainer parentView)
+    {
+        if (ViewFactory == null)
+            return null;
+
+        IGroup view = ViewFactory.CreateGroup(groupType, viewName, parentView);
+        if (view == null)
+            SLog.Log($"Warning: ui prefab name must be equal to view name...{viewName}");
+
+        return view;
     }
 
 
@@ -335,8 +344,11 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
             _screenBg = UIRoot.Instance.gameObject.transform.parent.Find("ScreenBackground")?.gameObject;
             if (_screenBg == null)
             {
-                GameObject prefab = LoadUIPrefab();
-                _screenBg = Object.Instantiate(prefab, UIRoot.Instance.gameObject.transform.parent);
+                    var factory = ViewFactory;
+                    if (factory == null) return;
+                    GameObject prefab = factory.LoadUIPrefab("ScreenBackground");
+                    if (prefab == null) return;
+                    _screenBg = Object.Instantiate(prefab, UIRoot.Instance.gameObject.transform.parent);
                 _screenBg.name = "ScreenBackground";
                 // _screenBg.GetComponent<Canvas>().worldCamera = CameraManager.UICamera;
                 GameObject.DontDestroyOnLoad(_screenBg.gameObject);
@@ -467,26 +479,13 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
 
     private IEnumerator LoadViewCoroutine(string viewType, Action<IView> onLoaded)
     {
-        GameObject prefab = LoadUIPrefab();
-        if (prefab == null)
+        if (ViewFactory == null)
         {
             onLoaded?.Invoke(null);
             yield break;
         }
 
-        GameObject viewObj = UnityEngine.Object.Instantiate(prefab);
-        if (viewObj != null)
-        {
-            viewObj.name = viewType.ToString();
-            IView view = createViewInstance(viewType);
-            if (view != null)
-                view.InitContainer(viewObj, viewType);
-
-            onLoaded?.Invoke(view);
-            yield break;
-        }
-
-        onLoaded(null);
+        yield return ViewFactory.LoadViewAsync(viewType, onLoaded);
     }
 
 
@@ -970,57 +969,6 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
             }
         }
         return count;
-    }
-}
-
-public class ViewPackage
-{
-    public static IView GetViewInstance(string viewName)
-    {
-        IView ret = null;
-        switch (viewName)
-        {
-            // case string.LoadingView:
-            //     ret = new LoadingView();
-            //     break;
-            // case string.InitView:
-            //     ret = new InitView();
-            //     break;
-            // case string.MainCityView:
-            //     ret = new MainCityView();
-            //     break;
-            // case string.QuestView:
-            //     ret = new QuestView();
-            //     break;
-            // case string.SelectJobGroupView:
-            //     ret = new SelectJobGroupView();
-            //     break;
-            // case string.CreateJobView:
-            //     ret = new CreateJobView();
-            //     break;
-            // case string.DeletePlayerView:
-            //     ret = new DeletePlayerView();
-            //     break;
-            // case string.MainBtnSetView:
-            //     ret = new MainBtnSetView();
-            //     break;
-            // case string.RankView:
-            //     ret = new RankView();
-            //     break;
-            // case string.MilitaryRankView:
-            //     ret = new MilitaryRankView();
-            //     break;
-            default:
-                Type t = Type.GetType(viewName.ToString());
-                if (t != null)
-                {
-                    ret = TypeFactory.Create(t) as IView;
-                }
-                break;
-
-        }
-
-        return ret;
     }
 }
 

@@ -154,16 +154,7 @@ public class IGroup : IControlContainer
         IGroup panel;
         if (!panelDict.TryGetValue(t, out panel))
         {
-            GameObject prefab = SquallUIMgr.Instance.LoadUIPrefab();
-            GameObject uiObj = GameObject.Instantiate(prefab, subRoot);
-            if (resetMatrix)
-            {
-                uiObj.transform.localPosition = Vector3.zero;
-                uiObj.transform.localRotation = Quaternion.identity;
-                uiObj.transform.localScale = Vector3.one;
-            }
-            panel = new T();
-            panel.InitContainerByOwner(this, uiObj);
+            panel = SquallUIMgr.Instance.CreateGroup<T>(eViewType, this, subRoot);
             panelDict.Add(t, panel);
         }
 
@@ -188,30 +179,10 @@ public class IGroup : IControlContainer
             panelDict = new Dictionary<System.Type, IGroup>();
         }
 
-        // 获取UI预制名称
-        string uiPrefabName;
-        if (string.IsNullOrEmpty(replacePrefabName))
-        {
-            uiPrefabName = panelType.Name;
-        }
-        else
-        {
-            uiPrefabName = replacePrefabName;
-        }
-
         IGroup panel;
         if (!panelDict.TryGetValue(panelType, out panel))
         {
-            GameObject prefab = SquallUIMgr.Instance.LoadUIPrefab();
-            GameObject uiObj = GameObject.Instantiate(prefab, subRoot);
-            if (resetMatrix)
-            {
-                uiObj.transform.localPosition = Vector3.zero;
-                uiObj.transform.localRotation = Quaternion.identity;
-                uiObj.transform.localScale = Vector3.one;
-            }
-            panel = TypeFactory.Create(panelType) as IGroup;
-            panel.InitContainerByOwner(this, uiObj);
+            panel = SquallUIMgr.Instance.CreateGroup(panelType, eViewType, this);
             panelDict.Add(panelType, panel);
         }
         panel.Show();

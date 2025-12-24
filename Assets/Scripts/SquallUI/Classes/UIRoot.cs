@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.EventSystems;
 using UnityEngine.Rendering;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 
 /// <summary>
@@ -10,6 +11,8 @@ using UnityEngine.UI;
 /// </summary>
 public class UIRoot : MonoBehaviour
 {
+    public Camera uiCamera;
+    
     public const int DESIGN_WIDTH = 1920;
     public const int DESIGN_HEIGHT = 1080;
 
@@ -21,67 +24,34 @@ public class UIRoot : MonoBehaviour
     /// </summary>
     private static UIRoot m_Instance = null;
 
-    private static Canvas m_Canvas = null;
+    private static Canvas _mCanvas = null;
 
-    private EventSystem eventSystem;
-    public EventSystem EventSystem
-    {
-        get { return eventSystem; }
-    }
+    private EventSystem _eventSystem;
+    
+    //可能用于坐标转换
+    public Canvas RootCanvas => _mCanvas;
 
-    public Canvas rootCanvas
-    {
-        get { return m_Canvas; }
-    }
-
-    public static UIRoot Instance
-    {
-        get { return m_Instance; }
-    }
+    public static UIRoot Instance => m_Instance;
 
     /// <summary>
     /// UI根节点缓存组件;
     /// </summary>
-    private Transform m_Trans;
+    private Transform _mTrans;
 
-    public Transform Trans
-    {
-        get { return m_Trans; }
-    }
+    public Transform Trans => _mTrans;
 
-    /// <summary>
-    /// UI相机;
-    /// </summary>
-    private Camera m_UICamera;
+    private CanvasScaler _scaler;
 
-    public Camera UICameara
-    {
-        get { return m_UICamera; }
-    }
+    public CanvasScaler Scaler => _scaler;
 
-    private CanvasScaler scaler;
 
-    public CanvasScaler Scaler
-    {
-        get
-        {
-            return scaler;
-        }
-    }
+    private Vector2 _mLastRectSize;
 
-    public RectTransform rt;
+    public static UnityEvent OnAspectChanged { get; private set; } = new UnityEvent();
 
-    private Vector2 m_LastRectSize;
-
-    public static UnityEvent onAspectChanged { get; private set; } = new UnityEvent();
-
-    public RectTransform rectTransform
-    {
-        get
-        {
-            return rt;
-        }
-    }
+    //供外部获取屏幕宽高
+    private RectTransform _rt;
+    public RectTransform RectTransform => _rt;
 
     private void Awake()
     {
@@ -92,17 +62,12 @@ public class UIRoot : MonoBehaviour
             throw new UnityException("UIRoot can't duplicate!");
         }
         m_Instance = this;
-        eventSystem = transform.Find("EventSystem").GetComponent<EventSystem>();
-        m_Trans = transform;
-        m_UICamera = transform.Find("UICamera").GetComponent<Camera>();
-        m_Canvas = transform.GetComponent<Canvas>();
-        if (m_UICamera == null)
-        {
-            throw new UnityException("UICamera Not Found! Please Add UI Camera in UIRoot Child");
-        }
-        rt = GetComponent<RectTransform>();
-        scaler = transform.GetComponent<CanvasScaler>();
-        m_LastRectSize = rt.sizeDelta;
+        _eventSystem = transform.Find("EventSystem").GetComponent<EventSystem>();
+        _mTrans = transform;
+        _mCanvas = transform.GetComponent<Canvas>();
+        _rt = GetComponent<RectTransform>();
+        _scaler = transform.GetComponent<CanvasScaler>();
+        _mLastRectSize = _rt.sizeDelta;
 
         
         //Adjust();
@@ -125,10 +90,15 @@ public class UIRoot : MonoBehaviour
         // 不用Screen.width
         // 因为FullBackImage和FullScreenImage中用的是rt.sizeDelta计算
         // 屏幕发生变化时，rt的大小还没变
-        if (m_LastRectSize != rt.sizeDelta)
+        if (_mLastRectSize != _rt.sizeDelta)
         {
-            onAspectChanged.Invoke();
-            m_LastRectSize = rt.sizeDelta;
+            OnAspectChanged.Invoke();
+            _mLastRectSize = _rt.sizeDelta;
         }
+    }
+
+    public void SetEventSystemEnabled(bool isEnabled)
+    {
+        _eventSystem.enabled = isEnabled;
     }
 }
