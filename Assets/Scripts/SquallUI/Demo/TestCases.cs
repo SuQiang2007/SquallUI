@@ -26,6 +26,16 @@ namespace SquallUI
 
         [Tooltip("是否在Start时自动运行基础测试")]
         [SerializeField] private bool autoRunOnStart = false;
+        
+        private enum Steps
+        {
+            CreateTestView1Sync,
+            CreateTestView1Async,
+            HideTestView2,
+            HideTestView1,
+            CreateTestView2Sync,
+            DestroyTestView3,
+        }
 
         private void Start()
         {
@@ -73,6 +83,83 @@ namespace SquallUI
         }
 
         #region 测试用例
+
+        public void Test1()
+        {
+            Debug.Log("========== 测试1: 显示界面功能 ==========");
+            
+            if (testViewNames.Count == 0)
+            {
+                Debug.LogError("测试失败: 未配置测试界面名称");
+                return;
+            }
+
+            string viewName = testViewNames[0];
+            Debug.Log($"尝试显示界面: {viewName}");
+
+            // 测试同步显示
+            SquallUIMgr.Instance.ShowView(viewName, view =>
+            {
+                if (view != null)
+                {
+                    Debug.Log($"✓ 界面显示成功: {viewName}, 可见性: {view.IsVisible()}");
+                }
+                else
+                {
+                    Debug.LogWarning($"✗ 界面显示失败: {viewName} (可能是预制体未配置)");
+                }
+            }, true);
+
+            // 测试异步显示
+            if (testViewNames.Count > 1)
+            {
+                string asyncViewName = testViewNames[1];
+                Debug.Log($"尝试异步显示界面: {asyncViewName}");
+                SquallUIMgr.Instance.ShowView(asyncViewName, view =>
+                {
+                    if (view != null)
+                    {
+                        Debug.Log($"✓ 异步界面显示成功: {asyncViewName}");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"✗ 异步界面显示失败: {asyncViewName}");
+                    }
+                    Debug.Log("========== 测试1完成 ==========\n");
+                }, false);
+            }
+            else
+            {
+                Debug.Log("========== 测试1完成 ==========\n");
+            }
+
+        }
+
+        private void Test2Hide()
+        {
+            Debug.Log("========== 测试2: 依次隐藏界面 ==========");
+            CoroutineInstance.BeginCoroutine(DelayAndHide());
+            Debug.Log("========== 测试2: 完成 ==========");
+        }
+
+        private IEnumerator Test3CreateAndDestroy()
+        {
+            Debug.Log("========== 测试3: 创建View销毁View ==========");
+            SquallUIMgr.Instance.ShowView(testViewNames[2]);
+            yield return new WaitForSeconds(0.5f);
+            SquallUIMgr.Instance.DestroyView(testViewNames[2]);
+            Debug.Log("========== 测试3: 完成 ==========");
+        }
+
+        private IEnumerator DelayAndHide()
+        {
+            yield return new WaitForSeconds(0.5f);
+            
+            SquallUIMgr.Instance.HideView(testViewNames[1]);
+            yield return new WaitForSeconds(0.5f);
+            
+            SquallUIMgr.Instance.HideView(testViewNames[0]);
+        }
 
         /// <summary>
         /// 测试1: 显示界面功能
@@ -479,26 +566,28 @@ namespace SquallUI
             Debug.Log("========== 开始运行所有测试用例 ==========\n");
             
             yield return new WaitForSeconds(0.5f);
-            TestShowView();
-            yield return new WaitForSeconds(2f);
-            
-            TestHideView();
-            yield return new WaitForSeconds(2f);
-            
-            TestDestroyView();
-            yield return new WaitForSeconds(2f);
-            
-            TestViewVisibility();
-            yield return new WaitForSeconds(2f);
-            
-            TestUIStack();
-            yield return new WaitForSeconds(2f);
-            
-            TestScreenBackground();
-            yield return new WaitForSeconds(3f);
-            
-            TestBatchOperations();
-            yield return new WaitForSeconds(3f);
+            Test1();
+            yield return new WaitForSeconds(0.5f);
+            Test2Hide();
+            yield return new WaitForSeconds(0.5f);
+            yield return Test3CreateAndDestroy();
+            // TestHideView();
+            // yield return new WaitForSeconds(2f);
+            //
+            // TestDestroyView();
+            // yield return new WaitForSeconds(2f);
+            //
+            // TestViewVisibility();
+            // yield return new WaitForSeconds(2f);
+            //
+            // TestUIStack();
+            // yield return new WaitForSeconds(2f);
+            //
+            // TestScreenBackground();
+            // yield return new WaitForSeconds(3f);
+            //
+            // TestBatchOperations();
+            // yield return new WaitForSeconds(3f);
             
             Debug.Log("========== 所有测试用例运行完成 ==========");
         }

@@ -94,6 +94,7 @@ namespace SquallUI
             }
             else
             {
+                SLog.LogError($"Create view controller failed:{viewName}");
                 Object.Destroy(viewObj);
                 onLoaded?.Invoke(null);
             }
