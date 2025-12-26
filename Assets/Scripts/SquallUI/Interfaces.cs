@@ -12,5 +12,10 @@ namespace SquallUI
             GameObject uiPrefab = Resources.Load<GameObject>(path);
             return uiPrefab;
         }
+
+        public static void ReleaseUIPrefab(string viewName)
+        {
+            Debug.LogWarning($"You need realize this function: ReleaseUIPrefab:{viewName}");
+        }
     }
 }

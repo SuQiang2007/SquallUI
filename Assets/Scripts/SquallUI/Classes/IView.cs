@@ -249,6 +249,7 @@ public class IView : IControlContainer
 		UILogicEventDispatcher.Instance.RemoveListenerByHandler(this.OnReceiveLogicEvent, this);
 		//TimerManager.Instance.DestroyByTarget(this);
 		OnDestroy();
+		Interfaces.ReleaseUIPrefab(Name);
 		IViewDeleter.DestroyUIObj(_uiGameObj);
 	}
 
