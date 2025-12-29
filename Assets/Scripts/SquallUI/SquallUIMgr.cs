@@ -321,6 +321,7 @@ public class SquallUIMgr : Singleton<SquallUIMgr>
 
         if (view != null)
         {
+            SquallUIMgr.Instance.PopView(view);
             view.Destroy();
             SLog.Log($"销毁View！！！！！{viewName}");
             viewList.Remove(viewName);

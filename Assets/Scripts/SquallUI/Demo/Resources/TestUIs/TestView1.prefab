@@ -91,6 +91,7 @@ GameObject:
   - component: {fileID: 5184565904397028927}
   - component: {fileID: 3806185871554921620}
   - component: {fileID: 770964152595606160}
+  - component: {fileID: 5059927758871571257}
   m_Layer: 5
   m_Name: TestView1
   m_TagString: Untagged
@@ -183,6 +184,25 @@ MonoBehaviour:
   m_BlockingMask:
     serializedVersion: 2
     m_Bits: 4294967295
+--- !u!114 &5059927758871571257
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3329077959140717797}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: efc47fb916decb945a34427e09ef75e3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _fields:
+  - varName: varLabel
+    target: {fileID: 6284320993691732262}
+    varType: UnityEngine.UI.Text
+    varPrefix: 0
+  _scriptPath: Assets/Scripts/SquallUI/Demo/UIClasses
+  _inheritClass: 
 --- !u!1 &4953592815768260236
 GameObject:
   m_ObjectHideFlags: 0
