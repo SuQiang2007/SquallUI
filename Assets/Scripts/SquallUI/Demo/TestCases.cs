@@ -26,10 +26,23 @@ namespace SquallUI
 
         [Tooltip("是否在Start时自动运行基础测试")]
         [SerializeField] private bool autoRunOnStart = false;
-   
+        
+        private enum Steps
+        {
+            CreateTestView1Sync,
+            CreateTestView1Async,
+            HideTestView2,
+            HideTestView1,
+            CreateTestView2Sync,
+            DestroyTestView3,
+        }
+
         private void Start()
         {
-            
+            if (autoRunOnStart)
+            {
+                StartCoroutine(RunBasicTests());
+            }
         }
 
         private void Update()
@@ -71,26 +84,14 @@ namespace SquallUI
 
         #region 测试用例
 
-        private IEnumerator Test4()
-        {
-            Debug.Log("========== 测试4: 复用旧的View ==========");
-            SquallUIMgr.Instance.ShowView(testViewNames[0]);
-            yield return new WaitForSeconds(1f);
-            SquallUIMgr.Instance.ShowView(testViewNames[1]);
-            yield return new WaitForSeconds(1f);
-            SquallUIMgr.Instance.HideView(testViewNames[1]);
-            yield return new WaitForSeconds(1f);
-            SquallUIMgr.Instance.HideView(testViewNames[0]);
-            Debug.Log("========== 测试4: 完成 ==========");
-        }
-        private IEnumerator Test1()
+        public void Test1()
         {
             Debug.Log("========== 测试1: 显示界面功能 ==========");
             
             if (testViewNames.Count == 0)
             {
                 Debug.LogError("测试失败: 未配置测试界面名称");
-                yield break;
+                return;
             }
 
             string viewName = testViewNames[0];
@@ -112,7 +113,6 @@ namespace SquallUI
             // 测试异步显示
             if (testViewNames.Count > 1)
             {
-                yield return new WaitForSeconds(1f);
                 string asyncViewName = testViewNames[1];
                 Debug.Log($"尝试异步显示界面: {asyncViewName}");
                 SquallUIMgr.Instance.ShowView(asyncViewName, view =>
@@ -566,13 +566,11 @@ namespace SquallUI
             Debug.Log("========== 开始运行所有测试用例 ==========\n");
             
             yield return new WaitForSeconds(0.5f);
-            yield return Test1();
+            Test1();
             yield return new WaitForSeconds(0.5f);
             Test2Hide();
             yield return new WaitForSeconds(0.5f);
             yield return Test3CreateAndDestroy();
-            yield return new WaitForSeconds(0.5f);
-            yield return Test4();
             // TestHideView();
             // yield return new WaitForSeconds(2f);
             //

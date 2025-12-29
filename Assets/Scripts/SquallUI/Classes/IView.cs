@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using SquallUI;
 using SquallUI.Classes;
 using TMPro;
 using UnityEngine;
@@ -249,8 +248,6 @@ public class IView : IControlContainer
 		UILogicEventDispatcher.Instance.RemoveListenerByHandler(this.OnReceiveLogicEvent, this);
 		//TimerManager.Instance.DestroyByTarget(this);
 		OnDestroy();
-		Interfaces.ReleaseUIPrefab(Name);
-		IViewDeleter.DestroyUIObj(_uiGameObj);
 	}
 
 	//具体界面请勿调用
